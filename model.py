@@ -2,6 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
+from sklearn.metrics import precision_recall_curve
+from sklearn.preprocessing import label_binarize
+import matplotlib.pyplot as plt
+
+from data import load_pr_data, NUM_CLASSES
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -99,3 +104,20 @@ def test(client_net, test_loader, loss_fn):
         correct += (torch.max(predictions.data, 1)[1] == labels).sum().item()
     accuracy = correct / len(test_loader.dataset)
     return loss, accuracy
+
+@torch.no_grad
+def plot_pr_curves(net):
+    images, labels = next(iter(load_pr_data()))
+    images = images.to(DEVICE)
+    labels = label_binarize(labels, classes=range(NUM_CLASSES))
+    
+    net.eval()
+    predictions = net(images)
+    predictions = predictions.cpu().detach().numpy()
+    for class_num in range(NUM_CLASSES):
+        precision, recall, _ = precision_recall_curve(labels[:, class_num], predictions[:, class_num])
+        plt.plot(recall, precision)
+    plt.ylabel("Precision")
+    plt.xlabel("Recall")
+    plt.title("Train Precision-Recall curve")
+    plt.show()

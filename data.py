@@ -106,8 +106,15 @@ def load_data_non_iid(num_classes_per_node):
     train_datasets_per_class = [Subset(train_dataset, train_dataset_class_indices[i]) for i in range(NUM_CLASSES)]
     test_datasets_per_class = [Subset(test_dataset, test_dataset_class_indices[i]) for i in range(NUM_CLASSES)]
     
-    train_datasets_per_class = [iter(random_split(train_datasets_per_class[i], [1/classes_included_counts[i] for _ in range(classes_included_counts[i])], generator)) for i in range(NUM_CLASSES)]
-    test_datasets_per_class = [iter(random_split(test_datasets_per_class[i], [1/classes_included_counts[i] for _ in range(classes_included_counts[i])], generator)) for i in range(NUM_CLASSES)]
+    train_splits = [[int(1/classes_included_counts[i] * len(train_datasets_per_class[i])) for _ in range(classes_included_counts[i])] for i in range(NUM_CLASSES)]
+    test_splits = [[int(1/classes_included_counts[i] * len(test_datasets_per_class[i])) for _ in range(classes_included_counts[i])] for i in range(NUM_CLASSES)]
+    
+    for i in range(NUM_CLASSES):
+        train_splits[i][0] += len(train_datasets_per_class[i]) - sum(train_splits[i])
+        test_splits[i][0] += len(test_datasets_per_class[i]) - sum(test_splits[i])
+        
+    train_datasets_per_class = [iter(random_split(train_datasets_per_class[i], train_splits[i], generator)) for i in range(NUM_CLASSES)]
+    test_datasets_per_class = [iter(random_split(test_datasets_per_class[i], test_splits[i], generator)) for i in range(NUM_CLASSES)]
     
     train_datasets = [[next(train_datasets_per_class[class_num]) for class_num in client] for client in classes_included]
     test_datasets = [[next(test_datasets_per_class[class_num]) for class_num in client] for client in classes_included]

@@ -1,12 +1,8 @@
 import torch
 from copy import deepcopy
 import scipy.stats as stats
-from sklearn.metrics import precision_recall_curve
-from sklearn.preprocessing import label_binarize
-import matplotlib.pyplot as plt
-import numpy as np
 
-from model import Net, Net2, ConvNet, ConvNet2, train, test, DEVICE
+from model import Net, Net2, ConvNet, ConvNet2, plot_pr_curves, train, test, DEVICE
 from clients import create_clients, generate_indices_first, generate_indices_random, NUM_CLIENTS
 from data import load_data, load_data_non_iid, load_data_server, load_pr_data, load_data_flwr, load_data_server_flwr, NUM_CLASSES
 from update import fed_avg, fed_avg_drouput, fed_avg_drouput_with_server, fed_avg_drouput_with_server_weights
@@ -66,24 +62,8 @@ for round in range(NUM_ROUNDS):
     # fed_avg_drouput_with_server_weights(server_net, client_nets, indices, client_weights)
     
     if SERVER_VERBOSE:
-        loss, accuracy = test(server_net, server_loaders[0], torch.nn.CrossEntropyLoss())
-        print("Server Train:")
-        print('Loss: ' + str(loss) + ' Accuracy: ' + str(accuracy))
         loss, accuracy = test(server_net, server_loaders[1], torch.nn.CrossEntropyLoss())
         print("Server:")
         print('Loss: ' + str(loss) + ' Accuracy: ' + str(accuracy))
 
-images, labels = next(iter(load_pr_data()))
-images = images.to(DEVICE)
-labels = label_binarize(labels, classes=range(NUM_CLASSES))
-with torch.no_grad():
-    server_net.eval()
-    predictions = server_net(images)
-    predictions = predictions.cpu().detach().numpy()
-    for class_num in range(NUM_CLASSES):
-        precision, recall, _ = precision_recall_curve(labels[:, class_num], predictions[:, class_num])
-        plt.plot(recall, precision)
-    plt.ylabel("Precision")
-    plt.xlabel("Recall")
-    plt.title("Train Precision-Recall curve")
-    plt.show()
+plot_pr_curves(server_net)
