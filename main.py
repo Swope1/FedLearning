@@ -1,23 +1,28 @@
 import torch
 from copy import deepcopy
 import scipy.stats as stats
+from sklearn.metrics import precision_recall_curve
+from sklearn.preprocessing import label_binarize
+import matplotlib.pyplot as plt
+import numpy as np
 
 from model import Net, Net2, ConvNet, ConvNet2, train, test, DEVICE
 from clients import create_clients, generate_indices_first, generate_indices_random, NUM_CLIENTS
-from data import load_data, load_data_server, load_data_flwr, load_data_server_flwr
+from data import load_data, load_data_non_iid, load_data_server, load_pr_data, load_data_flwr, load_data_server_flwr, NUM_CLASSES
 from update import fed_avg, fed_avg_drouput, fed_avg_drouput_with_server, fed_avg_drouput_with_server_weights
 
-NUM_ROUNDS = 80
+NUM_ROUNDS = 40
 NUM_EPOCHS_PER_ROUND = 5
 LR_START = 0.001
-LR_DISCOUT = 1
+LR_DISCOUT = .95
 CLIENT_VERBOSE = False
 SERVER_VERBOSE = True
 
 loaders = load_data()
+# loaders = load_data_non_iid(8)
 
 if SERVER_VERBOSE:
-    server_loader = load_data_server()
+    server_loaders = load_data_server()
 
 server_net = Net().to(DEVICE)
 # server_net = Net2().to(DEVICE)
@@ -53,17 +58,32 @@ for round in range(NUM_ROUNDS):
                 print('Loss: ' + str(loss) + ' Accuracy: ' + str(accuracy))
     
     # fed_avg(server_net, client_nets)
-    # fed_avg_drouput(server_net, client_nets, indices)
-    fed_avg_drouput_with_server(server_net, client_nets, indices)
+    fed_avg_drouput(server_net, client_nets, indices)
+    # fed_avg_drouput_with_server(server_net, client_nets, indices)
     
     # client_weights = stats.zscore(client_losses)
     # client_weights += abs(min(client_weights)) + 1
     # fed_avg_drouput_with_server_weights(server_net, client_nets, indices, client_weights)
     
     if SERVER_VERBOSE:
-        loss, accuracy = test(server_net, server_loader[0], torch.nn.CrossEntropyLoss())
+        loss, accuracy = test(server_net, server_loaders[0], torch.nn.CrossEntropyLoss())
         print("Server Train:")
         print('Loss: ' + str(loss) + ' Accuracy: ' + str(accuracy))
-        loss, accuracy = test(server_net, server_loader[1], torch.nn.CrossEntropyLoss())
+        loss, accuracy = test(server_net, server_loaders[1], torch.nn.CrossEntropyLoss())
         print("Server:")
         print('Loss: ' + str(loss) + ' Accuracy: ' + str(accuracy))
+
+images, labels = next(iter(load_pr_data()))
+images = images.to(DEVICE)
+labels = label_binarize(labels, classes=range(NUM_CLASSES))
+with torch.no_grad():
+    server_net.eval()
+    predictions = server_net(images)
+    predictions = predictions.cpu().detach().numpy()
+    for class_num in range(NUM_CLASSES):
+        precision, recall, _ = precision_recall_curve(labels[:, class_num], predictions[:, class_num])
+        plt.plot(recall, precision)
+    plt.ylabel("Precision")
+    plt.xlabel("Recall")
+    plt.title("Train Precision-Recall curve")
+    plt.show()

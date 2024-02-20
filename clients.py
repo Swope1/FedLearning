@@ -2,7 +2,7 @@ import torch
 import random
 from copy import deepcopy
 
-NUM_CLIENTS = 3
+NUM_CLIENTS = 10
 
 def generate_indices_first(server_net, prop_to_keep):
     indices = [[] for _ in range(NUM_CLIENTS)]

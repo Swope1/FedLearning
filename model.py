@@ -82,11 +82,8 @@ class ConvNet2(nn.Module):
             
 def train(client_net, train_loader, optimizer, loss_fn):
     client_net.train()
-    # [print(param.data.device) for param in client_net.parameters()]
     for batch in train_loader:
         imgs, labels = batch[0].to(DEVICE), batch[1].to(DEVICE)
-        # print(imgs.device)
-        # print(labels.device)
         optimizer.zero_grad()
         loss_fn(client_net(imgs), labels).backward()
         optimizer.step()
