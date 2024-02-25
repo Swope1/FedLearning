@@ -3,7 +3,7 @@ from copy import deepcopy
 import scipy.stats as stats
 
 from model import Net, Net2, ConvNet, ConvNet2, plot_pr_curves, train, test, DEVICE
-from clients import create_clients, generate_indices_first, generate_indices_random, NUM_CLIENTS
+from clients import create_clients, generate_indices_first, generate_indices_random, generate_indices_rolex, NUM_CLIENTS
 from data import load_data, load_data_non_iid, load_data_server, load_pr_data, load_data_flwr, load_data_server_flwr, NUM_CLASSES
 from update import fed_avg, fed_avg_drouput, fed_avg_drouput_with_server, fed_avg_drouput_with_server_weights
 
@@ -32,6 +32,7 @@ for round in range(NUM_ROUNDS):
     
     # indices = generate_indices_first(server_net, 0.5)
     indices = generate_indices_random(server_net, 0.5)
+    # indices = generate_indices_rolex(server_net, 0.5, 10, 5, round)
     
     # client_nets = [deepcopy(server_net) for _ in range(NUM_CLIENTS)]
     client_nets = create_clients(server_net, indices)

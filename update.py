@@ -1,5 +1,7 @@
 import torch
+import torch.nn as nn
 import math
+from copy import deepcopy
 
 from clients import NUM_CLIENTS
 from model import DEVICE
@@ -16,56 +18,77 @@ def fed_avg(server_net, client_nets):
 @torch.no_grad()
 def fed_avg_drouput(server_net, client_nets, indices):
     
-    server_params = list(server_net.parameters())
-    new_server_params = [torch.zeros(server_param.data.size()).to(DEVICE) for server_param in server_params]
-    num_clients = [torch.zeros(server_param.data.size()).to(DEVICE) for server_param in server_params]
-    client_nets_params = [list(client_net.parameters()) for client_net in client_nets]
-    param_names = [named_param[0] for named_param in server_net.named_parameters()]
+    # server_layers = list(server_net.children())
+    new_server_layers = deepcopy(list(server_net.children()))
+    client_layers = [list(client_net.children()) for client_net in client_nets]
     
-    for param_num in range(len(server_params)):
-        for client_num in range(NUM_CLIENTS):
-            if param_names[param_num].split('.')[1] == 'weight':
-                if param_num == 0: # first layer
-                    for i in range(len(indices[client_num][0])):
-                        new_server_params[param_num][indices[client_num][0][i]] += client_nets_params[client_num][param_num][i]
-                        num_clients[param_num][indices[client_num][0][i]] += torch.ones(client_nets_params[client_num][param_num][i].size()).to(DEVICE)
-                elif param_num == len(param_names) - 2: # last layer
-                    for i in range(len(new_server_params[param_num])):
-                        new_server_params[param_num][i][indices[client_num][-1]] += client_nets_params[client_num][param_num][i]
-                        num_clients[param_num][i][indices[client_num][-1]] += 1
-                else: # middle layers
-                    for (i,j) in zip(indices[client_num][param_num // 2], range(len(client_nets_params[client_num][param_num]))):
-                        new_server_params[param_num][i][indices[client_num][(param_num // 2) - 1]] += client_nets_params[client_num][param_num][j]
-                        num_clients[param_num][i][indices[client_num][(param_num // 2) - 1]] += 1
+    num_weighted_layers = len(indices[0]) + 1
+    weighted_layer_num = 0
+    layer_num = 0
+    
+    for layer in server_net.children():
+        if isinstance(layer, nn.Linear):
             
-            else:
-                if param_num == len(param_names) - 1: # last layer
-                    new_server_params[param_num] += client_nets_params[client_num][param_num]
-                    num_clients[param_num] += 1
-                else: # first and middle layers
-                    new_server_params[param_num][indices[client_num][param_num // 2]] += client_nets_params[client_num][param_num]
-                    num_clients[param_num][indices[client_num][param_num // 2]] += 1
+            # set new_server_layer weights (and biases) to zero
+            new_server_layers[layer_num].weight.data = torch.zeros(new_server_layers[layer_num].weight.size()).to(DEVICE)
+            new_server_layers[layer_num].bias.data = torch.zeros(new_server_layers[layer_num].bias.size()).to(DEVICE)
+            
+            # set num_clients_per_weight to zero
+            client_counts_weights = torch.zeros(layer.weight.size()).to(DEVICE)
+            client_counts_bias = torch.zeros(layer.bias.size()).to(DEVICE)
+            
+            for client in range(NUM_CLIENTS):
+                
+                if weighted_layer_num == 0: # first layer
+                    new_server_layers[layer_num].weight.data[indices[client][0]] += client_layers[client][layer_num].weight.data
+                    client_counts_weights[indices[client][0]] += 1
+                    
+                    new_server_layers[layer_num].bias.data[indices[client][0]] += client_layers[client][layer_num].bias.data
+                    client_counts_bias[indices[client][0]] += 1
+                    
+                elif weighted_layer_num == num_weighted_layers - 1: # last layer
+                    for output in range(len(new_server_layers[layer_num].weight.data)):
+                        new_server_layers[layer_num].weight.data[output][indices[client][weighted_layer_num - 1]] += client_layers[client][layer_num].weight.data[output]
+                        client_counts_weights[output][indices[client][weighted_layer_num - 1]] += 1
 
-    for param_num in range(len(new_server_params)):
-        if param_names[param_num].split('.')[1] == 'weight':
-            zero_indices = (num_clients[param_num] == 0).nonzero()
-            for i in zero_indices:
-                new_server_params[param_num][i[0]][i[1]] = server_params[param_num][i[0]][i[1]]
-                num_clients[param_num][i[0]][i[1]] = 1
-        else: 
-            zero_indices = (num_clients[param_num] == 0).nonzero()
-            new_server_params[param_num][zero_indices] = server_params[param_num][zero_indices]
-            num_clients[param_num][zero_indices] = 1
-        new_server_params[param_num] = torch.div(new_server_params[param_num], num_clients[param_num])
+                    new_server_layers[layer_num].bias.data += client_layers[client][layer_num].bias.data / NUM_CLIENTS
+                    client_counts_bias = None
+                    
+                else: # every other layer
+                    for (index, weights) in zip(indices[client][weighted_layer_num], range(len(client_layers[client][layer_num].weight.data))):
+                        new_server_layers[layer_num].weight.data[index][indices[client][weighted_layer_num - 1]] += client_layers[client][layer_num].weight.data[weights]
+                        client_counts_weights[index][indices[client][weighted_layer_num - 1]] += 1
+                    
+                    new_server_layers[layer_num].bias.data[indices[client][weighted_layer_num]] += client_layers[client][layer_num].bias.data
+                    client_counts_bias[indices[client][weighted_layer_num]] += 1
 
-    for (server_param_num, server_param) in enumerate(server_net.parameters()):
-        server_param.data = new_server_params[server_param_num]
+            # check for and correct zero weights
+            zero_indices_weights = (client_counts_weights == 0).nonzero()
+            for index in zero_indices_weights:
+                new_server_layers[layer_num].weight.data[index[0]][index[1]] = layer.weight.data[index[0]][index[1]]
+                client_counts_weights[index[0]][index[1]] = 1
+                
+            if weighted_layer_num != num_weighted_layers - 1:
+                zero_indices_bias = (client_counts_bias == 0).nonzero()
+                new_server_layers[layer_num].bias.data[zero_indices_bias] = layer.bias.data[zero_indices_bias]
+                client_counts_bias[zero_indices_bias] = 1
+            
+            # update weights
+            new_server_layers[layer_num].weight.data /= client_counts_weights
+            if weighted_layer_num != num_weighted_layers - 1:
+                new_server_layers[layer_num].bias.data /= client_counts_bias
+            
+            layer.weight.data = new_server_layers[layer_num].weight.data
+            layer.bias.data = new_server_layers[layer_num].bias.data
+
+            weighted_layer_num += 1
+        layer_num += 1
+        
 
 @torch.no_grad()
 def fed_avg_drouput_with_server(server_net, client_nets, indices):
     
     server_params = list(server_net.parameters())
-    # new_server_params = [torch.zeros(server_param.data.size()).to(DEVICE) for server_param in server_params]
     num_clients = [torch.ones(server_param.data.size()).to(DEVICE) for server_param in server_params]
     client_nets_params = [list(client_net.parameters()) for client_net in client_nets]
     param_names = [named_param[0] for named_param in server_net.named_parameters()]
@@ -101,7 +124,6 @@ def fed_avg_drouput_with_server(server_net, client_nets, indices):
 def fed_avg_drouput_with_server_weights(server_net, client_nets, indices, client_weights):
     
     server_params = list(server_net.parameters())
-    # new_server_params = [torch.zeros(server_param.data.size()).to(DEVICE) for server_param in server_params]
     num_clients = [torch.ones(server_param.data.size()).to(DEVICE) for server_param in server_params]
     client_nets_params = [list(client_net.parameters()) for client_net in client_nets]
     param_names = [named_param[0] for named_param in server_net.named_parameters()]

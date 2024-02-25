@@ -26,6 +26,19 @@ def generate_indices_random(server_net, prop_to_keep):
                 indices[client_num].append(random.sample(range(num_neurons), int(num_neurons * prop_to_keep)))
     return indices
 
+def generate_indices_rolex(server_net, prop_to_keep, client_step, round_step, round_num):
+    indices = [[] for _ in range(NUM_CLIENTS)]
+    num_layers = len(list(server_net.parameters()))//2
+    for (name, param) in server_net.named_parameters():
+        param_type = name.split('.')[1]
+        if param_type == 'bias' and len(indices[0]) < num_layers - 1:
+            num_neurons = param.data.size(0)
+            for client_num in range(NUM_CLIENTS):
+                diff = int(num_neurons * prop_to_keep)
+                start = (client_num * client_step) + (round_num * round_step)
+                indices[client_num].append([i % num_neurons for i in list(range(start, start + diff))])
+    return indices
+
 def create_clients(server_net, indices):
     client_nets = [deepcopy(server_net) for _ in range(NUM_CLIENTS)]
 
