@@ -13,6 +13,7 @@ LR_START = 0.001
 LR_DISCOUT = .95
 CLIENT_VERBOSE = False
 SERVER_VERBOSE = True
+NEED_WEIGHTS = True
 
 loaders = load_data()
 # loaders = load_data_non_iid(8)
@@ -49,18 +50,19 @@ for round in range(NUM_ROUNDS):
                 
             train(client_net, loaders[client_num][0], optimizers[client_num], torch.nn.CrossEntropyLoss())
 
-            if CLIENT_VERBOSE:
+            if CLIENT_VERBOSE or NEED_WEIGHTS:
                 loss, accuracy = test(client_net, loaders[client_num][1], torch.nn.CrossEntropyLoss())
                 client_losses.append(loss)
+            if CLIENT_VERBOSE:
                 print('Loss: ' + str(loss) + ' Accuracy: ' + str(accuracy))
     
     # fed_avg(server_net, client_nets)
-    fed_avg_drouput(server_net, client_nets, indices)
+    # fed_avg_drouput(server_net, client_nets, indices)
     # fed_avg_drouput_with_server(server_net, client_nets, indices)
     
-    # client_weights = stats.zscore(client_losses)
-    # client_weights += abs(min(client_weights)) + 1
-    # fed_avg_drouput_with_server_weights(server_net, client_nets, indices, client_weights)
+    client_weights = stats.zscore(client_losses)
+    client_weights += abs(min(client_weights)) + 1
+    fed_avg_drouput_with_server_weights(server_net, client_nets, indices, client_weights)
     
     if SERVER_VERBOSE:
         loss, accuracy = test(server_net, server_loaders[1], torch.nn.CrossEntropyLoss())
