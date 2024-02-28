@@ -6,13 +6,27 @@ from sklearn.metrics import precision_recall_curve
 from sklearn.preprocessing import label_binarize
 import matplotlib.pyplot as plt
 
-from data import load_pr_data, NUM_CLASSES
+from data import load_pr_data_MNIST, load_pr_data_CIFAR10, NUM_CLASSES
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-class Net(nn.Module):
+class MNIST_Net(nn.Module):
     def __init__(self) -> None:
-        super(Net, self).__init__()
+        super(MNIST_Net, self).__init__()
+        self.flatten = nn.Flatten()
+        self.dense1 = nn.Linear(28 * 28, 128)
+        self.dense2 = nn.Linear(128, 32)
+        self.dense3 = nn.Linear(32, 10)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.flatten(x)
+        x = F.relu(self.dense1(x))
+        x = F.relu(self.dense2(x))
+        return self.dense3(x)
+
+class CIFAR10_Net(nn.Module):
+    def __init__(self) -> None:
+        super(CIFAR10_Net, self).__init__()
         self.flatten = nn.Flatten()
         self.dense1 = nn.Linear(32 * 32 * 3, 256)
         self.dense2 = nn.Linear(256, 64)
@@ -24,9 +38,9 @@ class Net(nn.Module):
         x = F.relu(self.dense2(x))
         return self.dense3(x)
 
-class Net2(nn.Module):
+class CIFAR10_Net2(nn.Module):
     def __init__(self) -> None:
-        super(Net2, self).__init__()
+        super(CIFAR10_Net2, self).__init__()
         self.flatten = nn.Flatten()
         self.dense1 = nn.Linear(32 * 32 * 3, 1024)
         self.dense2 = nn.Linear(1024, 256)
@@ -87,11 +101,18 @@ class ConvNet2(nn.Module):
             
 def train(client_net, train_loader, optimizer, loss_fn):
     client_net.train()
+    correct, loss = 0, 0.0
     for batch in train_loader:
         imgs, labels = batch[0].to(DEVICE), batch[1].to(DEVICE)
         optimizer.zero_grad()
-        loss_fn(client_net(imgs), labels).backward()
+        predictions = client_net(imgs)
+        batch_loss = loss_fn(client_net(imgs), labels)
+        batch_loss.backward()
         optimizer.step()
+        loss += batch_loss.item()
+        correct += (torch.max(predictions.data, 1)[1] == labels).sum().item()
+    accuracy = correct / len(train_loader.dataset)
+    return loss, accuracy
 
 @torch.no_grad()
 def test(client_net, test_loader, loss_fn):
@@ -107,7 +128,7 @@ def test(client_net, test_loader, loss_fn):
 
 @torch.no_grad
 def plot_pr_curves(net):
-    images, labels = next(iter(load_pr_data()))
+    images, labels = next(iter(load_pr_data_MNIST()))
     images = images.to(DEVICE)
     labels = label_binarize(labels, classes=range(NUM_CLASSES))
     
@@ -119,5 +140,6 @@ def plot_pr_curves(net):
         plt.plot(recall, precision)
     plt.ylabel("Precision")
     plt.xlabel("Recall")
-    plt.title("Train Precision-Recall curve")
+    plt.title("Precision-Recall Curve")
+    plt.legend([str(x) for x in range(10)]) 
     plt.show()

@@ -3,6 +3,7 @@ import random
 from copy import deepcopy
 
 NUM_CLIENTS = 10
+SEED = 1
 
 def generate_indices_first(server_net, prop_to_keep):
     indices = [[] for _ in range(NUM_CLIENTS)]
@@ -16,6 +17,7 @@ def generate_indices_first(server_net, prop_to_keep):
     return indices
 
 def generate_indices_random(server_net, prop_to_keep):
+    random.seed(SEED)
     indices = [[] for _ in range(NUM_CLIENTS)]
     num_layers = len(list(server_net.parameters()))//2
     for (name, param) in server_net.named_parameters():
