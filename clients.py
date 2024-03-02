@@ -37,7 +37,7 @@ def generate_indices_rolex(server_net, prop_to_keep, client_step, round_step, ro
             num_neurons = param.data.size(0)
             for client_num in range(NUM_CLIENTS):
                 diff = int(num_neurons * prop_to_keep)
-                start = (client_num * client_step) + (round_num * round_step)
+                start = int(client_num * client_step * diff) + int(round_num * round_step * diff)
                 indices[client_num].append([i % num_neurons for i in list(range(start, start + diff))])
     return indices
 
